@@ -1,8 +1,8 @@
-# AI Incident Logger
+# Incident Logger
 
-A lightweight alerting and incident tracking system that monitors infrastructure metrics, generates AI-powered incident summaries using Claude, delivers real-time alerts via Telegram, and displays a live incident dashboard.
+A lightweight alerting and incident tracking system that monitors infrastructure metrics, generates structured incident summaries, delivers real-time alerts via Telegram, and displays a live incident dashboard.
 
-> Part of a portfolio targeting AI infrastructure and NOC roles. Works alongside [ai-infra-monitor](https://github.com/ohdasdiego/ai-infra-monitor).
+> Works alongside [infra-monitor](https://github.com/ohdasdiego/ai-infra-monitor) to provide a complete monitoring and alerting pipeline.
 
 ---
 
@@ -15,16 +15,16 @@ A lightweight alerting and incident tracking system that monitors infrastructure
 ## What It Does
 
 **Background (cron, every 5 min):**
-1. Reads live metrics from `ai-infra-monitor`
+1. Reads live metrics from `infra-monitor`
 2. Detects threshold breaches (CPU, memory, disk, processes)
-3. Calls Claude API → structured incident summary (cause, impact, action)
-4. Sends Telegram alert with severity and AI analysis
+3. Generates a structured incident summary (cause, impact, action)
+4. Sends Telegram alert with severity details
 5. Logs incident to `incidents.jsonl` with cooldown to prevent duplicates
 
 **Dashboard (Flask, always-on):**
 - Live incident feed with severity filtering
 - Stats: total, critical, warning, active alerts, last 24h
-- Per-incident: AI summary, metric value, Telegram delivery status
+- Per-incident: summary, metric value, Telegram delivery status
 - Acknowledge and Resolve actions per incident
 - Auto-refreshes every 60 seconds
 
@@ -50,7 +50,7 @@ cron (every 5 min)
   └── alerter.py
         ├── reads ../ai-infra-monitor/data/metrics.json
         ├── evaluates thresholds
-        ├── Claude API → incident summary
+        ├── analysis engine → incident summary
         ├── Telegram alert
         └── logs/incidents.jsonl
 
@@ -81,7 +81,7 @@ gunicorn (always-on, port 5001)
 ## Setup
 
 ### Prerequisites
-- [ai-infra-monitor](https://github.com/ohdasdiego/ai-infra-monitor) installed and running
+- [infra-monitor](https://github.com/ohdasdiego/ai-infra-monitor) installed and running
 - Telegram bot token + chat ID (see below)
 - Anthropic API key
 
@@ -157,7 +157,7 @@ python view_logs.py --last 10 --severity red
 | Component | Technology |
 |---|---|
 | Language | Python |
-| AI analysis | Anthropic Claude API (`claude-haiku-4-5`) |
+| Analysis engine | Anthropic Claude API (`claude-haiku-4-5`) |
 | Alerting | Telegram Bot API |
 | Dashboard | Flask + Gunicorn |
 | Frontend | Vanilla HTML/CSS/JS |
