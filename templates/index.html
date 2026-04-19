@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Incident Logger</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #080d13;
+      --surface:  #0d1520;
+      --card:     #111a27;
+      --border:   #1e2d40;
+      --accent:   #00d4ff;
+      --accent2:  #0099bb;
+      --red:      #ff4757;
+      --red-dim:  rgba(255,71,87,0.12);
+      --yellow:   #ffa502;
+      --yellow-dim: rgba(255,165,2,0.12);
+      --green:    #2ed573;
+      --green-dim:rgba(46,213,115,0.12);
+      --text:     #cdd6e8;
+      --muted:    #4a607a;
+      --mono:     'JetBrains Mono', monospace;
+      --sans:     'DM Sans', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+    }
+
+    /* ── Scanline overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-mark {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--accent);
+      background: rgba(0,212,255,0.08);
+      border: 1px solid rgba(0,212,255,0.2);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+    }
+
+    .logo-title {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.05em;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .live-dot {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--green);
+      letter-spacing: 0.1em;
+    }
+
+    .live-dot::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: blink 1.5s ease-in-out infinite;
+    }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Main layout ── */
+    main {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem;
+    }
+
+    /* ── Stat cards ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    @media (max-width: 1100px) { .stats-row { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 600px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .stat-card:hover { border-color: var(--accent2); }
+
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+    }
+
+    .stat-card.total::after    { background: var(--accent); }
+    .stat-card.red-c::after    { background: var(--red); }
+    .stat-card.yellow-c::after { background: var(--yellow); }
+    .stat-card.active::after   { background: var(--green); }
+    .stat-card.day::after      { background: var(--muted); }
+    .stat-card.resolved::after { background: #7c6af7; }
+
+    .stat-label {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 1.8rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .stat-card.total    .stat-value { color: var(--accent); }
+    .stat-card.red-c    .stat-value { color: var(--red); }
+    .stat-card.yellow-c .stat-value { color: var(--yellow); }
+    .stat-card.active   .stat-value { color: var(--green); }
+    .stat-card.day      .stat-value { color: var(--text); }
+    .stat-card.resolved .stat-value { color: #7c6af7; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-label {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .filter-btn {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      padding: 0.35rem 0.85rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: all 0.15s;
+    }
+
+    .filter-btn:hover { border-color: var(--accent2); color: var(--accent); }
+    .filter-btn.active { background: rgba(0,212,255,0.1); border-color: var(--accent); color: var(--accent); }
+    .filter-btn.red-f.active { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+    .filter-btn.yellow-f.active { background: var(--yellow-dim); border-color: var(--yellow); color: var(--yellow); }
+
+    .spacer { flex: 1; }
+
+    .refresh-btn {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      padding: 0.35rem 0.85rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: all 0.15s;
+    }
+
+    .refresh-btn:hover { border-color: var(--accent2); color: var(--accent); }
+
+    /* ── Incident list ── */
+    .incident-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .incident-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 3px solid transparent;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 1rem;
+      align-items: start;
+      transition: border-color 0.2s, background 0.2s;
+      animation: slideIn 0.25s ease;
+    }
+
+    @keyframes slideIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
+
+    .incident-card.red    { border-left-color: var(--red); }
+    .incident-card.yellow { border-left-color: var(--yellow); }
+    .incident-card:hover  { background: #131f30; }
+    .incident-card.resolved { opacity: 0.45; }
+
+    .incident-icon {
+      font-size: 1.1rem;
+      margin-top: 1px;
+      flex-shrink: 0;
+    }
+
+    .incident-body { min-width: 0; }
+
+    .incident-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .incident-metric {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .badge {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.45rem;
+      border-radius: 3px;
+    }
+
+    .badge.red    { background: var(--red-dim); color: var(--red); border: 1px solid rgba(255,71,87,0.3); }
+    .badge.yellow { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(255,165,2,0.3); }
+    .badge.ack    { background: rgba(0,212,255,0.08); color: var(--accent2); border: 1px solid rgba(0,212,255,0.2); }
+    .badge.res    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(46,213,115,0.3); }
+
+    .incident-value {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .incident-summary {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .summary-line { display: flex; gap: 0.4rem; }
+    .summary-key { font-family: var(--mono); font-size: 0.72rem; color: var(--accent2); flex-shrink: 0; min-width: 52px; }
+
+    .incident-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .incident-time {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .action-btns {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .action-btn {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .action-btn:hover { border-color: var(--accent2); color: var(--accent); }
+    .action-btn.resolve:hover { border-color: var(--green); color: var(--green); }
+    .action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ── Empty / loading states ── */
+    .empty {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+    }
+
+    .empty .big { font-size: 2rem; margin-bottom: 1rem; }
+
+    /* ── Pagination ── */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .page-btn {
+      padding: 0.3rem 0.7rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      transition: all 0.15s;
+    }
+
+    .page-btn:hover:not(:disabled) { border-color: var(--accent2); color: var(--accent); }
+    .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      margin-top: 2rem;
+      letter-spacing: 0.05em;
+    }
+
+    footer a { color: var(--accent2); text-decoration: none; }
+    footer a:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-mark">NOC</span>
+    <span class="logo-title">INCIDENT LOGGER</span>
+  </div>
+  <div class="header-right">
+    <span class="live-dot">LIVE</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Stats Row -->
+  <div class="stats-row">
+    <div class="stat-card total">
+      <div class="stat-label">Total Incidents</div>
+      <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card red-c">
+      <div class="stat-label">Critical</div>
+      <div class="stat-value" id="stat-red">—</div>
+    </div>
+    <div class="stat-card yellow-c">
+      <div class="stat-label">Warning</div>
+      <div class="stat-value" id="stat-yellow">—</div>
+    </div>
+    <div class="stat-card active">
+      <div class="stat-label">Active Alerts</div>
+      <div class="stat-value" id="stat-active">—</div>
+    </div>
+    <div class="stat-card day">
+      <div class="stat-label">Last 24h</div>
+      <div class="stat-value" id="stat-24h">—</div>
+    </div>
+    <div class="stat-card resolved">
+      <div class="stat-label">Resolved</div>
+      <div class="stat-value" id="stat-resolved">—</div>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span class="toolbar-label">Filter:</span>
+    <button class="filter-btn active" data-filter="all">ALL</button>
+    <button class="filter-btn red-f" data-filter="red">🔴 CRITICAL</button>
+    <button class="filter-btn yellow-f" data-filter="yellow">🟡 WARNING</button>
+    <div class="spacer"></div>
+    <button class="refresh-btn" id="clear-resolved-btn">✕ CLEAR RESOLVED</button>
+    <button class="refresh-btn" id="refresh-btn">↻ REFRESH</button>
+  </div>
+
+  <!-- Incident List -->
+  <div class="incident-list" id="incident-list">
+    <div class="empty"><div class="big">⟳</div>Loading incidents…</div>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination" id="pagination" style="display:none">
+    <button class="page-btn" id="prev-btn" disabled>← PREV</button>
+    <span id="page-info">—</span>
+    <button class="page-btn" id="next-btn">NEXT →</button>
+  </div>
+
+</main>
+
+<footer>
+  Built by <a href="https://github.com/ohdasdiego" target="_blank">ohdasdiego</a> ·
+  Powered by <a href="https://www.anthropic.com" target="_blank">Claude AI</a> ·
+  <a href="https://github.com/ohdasdiego/ai-incident-logger" target="_blank">GitHub</a>
+</footer>
+
+<script>
+const PAGE_SIZE = 20;
+let currentFilter = "all";
+let currentOffset = 0;
+let totalIncidents = 0;
+
+// ── API calls ─────────────────────────────────────────────
+async function fetchSummary() {
+  const r = await fetch("/api/summary");
+  return r.json();
+}
+
+async function fetchIncidents(severity, offset, limit) {
+  let url = `/api/incidents?limit=${limit}&offset=${offset}`;
+  if (severity !== "all") url += `&severity=${severity}`;
+  const r = await fetch(url);
+  return r.json();
+}
+
+async function acknowledge(id) {
+  await fetch(`/api/incidents/${id}/acknowledge`, { method: "POST" });
+}
+
+async function resolve(id) {
+  await fetch(`/api/incidents/${id}/resolve`, { method: "POST" });
+}
+
+// ── Render summary stats ──────────────────────────────────
+function renderStats(data) {
+  document.getElementById("stat-total").textContent    = data.total_incidents ?? "—";
+  document.getElementById("stat-red").textContent      = data.red ?? "—";
+  document.getElementById("stat-yellow").textContent   = data.yellow ?? "—";
+  document.getElementById("stat-active").textContent   = data.active_alerts ?? "—";
+  document.getElementById("stat-24h").textContent      = data.last_24h ?? "—";
+  document.getElementById("stat-resolved").textContent = data.resolved ?? "—";
+}
+
+// ── Parse AI summary text ─────────────────────────────────
+function parseSummary(text) {
+  if (!text) return [];
+  return text.split("\n").map(line => {
+    const [key, ...rest] = line.split(": ");
+    return { key: key.trim(), val: rest.join(": ").trim() };
+  }).filter(l => l.key && l.val);
+}
+
+// ── Render incident cards ─────────────────────────────────
+function renderIncidents(incidents) {
+  const container = document.getElementById("incident-list");
+
+  if (!incidents.length) {
+    container.innerHTML = `
+      <div class="empty">
+        <div class="big">✓</div>
+        No incidents match this filter.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = incidents.map((inc) => {
+    const icon   = inc.severity === "red" ? "🔴" : "🟡";
+    const ts     = new Date(inc.timestamp).toLocaleString();
+    const lines  = parseSummary(inc.summary || "");
+    const isAck  = inc.acknowledged;
+    const isRes  = inc.resolved;
+    const id     = inc.id || "";
+
+    const summaryHtml = lines.map(l =>
+      `<div class="summary-line">
+        <span class="summary-key">${l.key}</span>
+        <span>${l.val}</span>
+      </div>`
+    ).join("");
+
+    const badges = [
+      `<span class="badge ${inc.severity}">${inc.severity.toUpperCase()}</span>`,
+      isAck ? `<span class="badge ack">ACK</span>` : "",
+      isRes ? `<span class="badge res">RESOLVED</span>` : "",
+    ].join("");
+
+    return `
+      <div class="incident-card ${inc.severity} ${isRes ? "resolved" : ""}" data-id="${id}">
+        <div class="incident-icon">${icon}</div>
+        <div class="incident-body">
+          <div class="incident-header">
+            <span class="incident-metric">${inc.metric}</span>
+            ${badges}
+          </div>
+          <div class="incident-value">
+            ${inc.value}% &nbsp;·&nbsp; threshold ${inc.threshold}% &nbsp;·&nbsp; Telegram: ${inc.notified ? "✓ sent" : "✗ failed"}
+          </div>
+          <div class="incident-summary">${summaryHtml || '<span style="color:var(--muted);font-size:0.75rem">No AI summary available</span>'}</div>
+        </div>
+        <div class="incident-meta">
+          <span class="incident-time">${ts}</span>
+          <div class="action-btns">
+            <button class="action-btn" onclick="handleAck('${id}')" ${isAck ? "disabled" : ""}>ACK</button>
+            <button class="action-btn resolve" onclick="handleResolve('${id}')" ${isRes ? "disabled" : ""}>RESOLVE</button>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ── Pagination ────────────────────────────────────────────
+function updatePagination(total, offset, limit) {
+  const pagDiv  = document.getElementById("pagination");
+  const prevBtn = document.getElementById("prev-btn");
+  const nextBtn = document.getElementById("next-btn");
+  const info    = document.getElementById("page-info");
+
+  if (total <= limit) {
+    pagDiv.style.display = "none";
+    return;
+  }
+
+  pagDiv.style.display = "flex";
+  const page    = Math.floor(offset / limit) + 1;
+  const pages   = Math.ceil(total / limit);
+  info.textContent = `PAGE ${page} / ${pages}`;
+  prevBtn.disabled = offset === 0;
+  nextBtn.disabled = offset + limit >= total;
+}
+
+// ── Action handlers ───────────────────────────────────────
+async function handleAck(id) {
+  await acknowledge(id);
+  loadAll();
+}
+
+async function handleResolve(id) {
+  await resolve(id);
+  loadAll();
+}
+
+// ── Main load ─────────────────────────────────────────────
+async function loadAll() {
+  try {
+    const [summary, data] = await Promise.all([
+      fetchSummary(),
+      fetchIncidents(currentFilter, currentOffset, PAGE_SIZE),
+    ]);
+    renderStats(summary);
+    totalIncidents = data.total;
+    renderIncidents(data.incidents);
+    updatePagination(data.total, currentOffset, PAGE_SIZE);
+  } catch (e) {
+    document.getElementById("incident-list").innerHTML =
+      `<div class="empty"><div class="big">⚠</div>Could not reach API. Is the server running?</div>`;
+    console.error(e);
+  }
+}
+
+// ── Event listeners ───────────────────────────────────────
+document.querySelectorAll(".filter-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentFilter = btn.dataset.filter;
+    currentOffset = 0;
+    loadAll();
+  });
+});
+
+document.getElementById("refresh-btn").addEventListener("click", loadAll);
+
+document.getElementById("clear-resolved-btn").addEventListener("click", async () => {
+  await fetch("/api/incidents/clear-resolved", { method: "POST" });
+  loadAll();
+});
+
+document.getElementById("prev-btn").addEventListener("click", () => {
+  currentOffset = Math.max(0, currentOffset - PAGE_SIZE);
+  loadAll();
+});
+
+document.getElementById("next-btn").addEventListener("click", () => {
+  currentOffset += PAGE_SIZE;
+  loadAll();
+});
+
+// ── Init & auto-refresh ───────────────────────────────────
+loadAll();
+setInterval(loadAll, 60_000);
+</script>
+</body>
+</html>

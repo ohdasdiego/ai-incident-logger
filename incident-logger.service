@@ -1,0 +1,14 @@
+[Unit]
+Description=AI Incident Logger API
+After=network.target
+
+[Service]
+User=YOUR_LINUX_USER
+WorkingDirectory=/home/YOUR_LINUX_USER/ai-incident-logger
+EnvironmentFile=/home/YOUR_LINUX_USER/ai-incident-logger/.env
+ExecStart=/home/YOUR_LINUX_USER/ai-incident-logger/venv/bin/gunicorn api:app --bind 127.0.0.1:5001 --workers 2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
