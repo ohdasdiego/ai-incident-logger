@@ -421,7 +421,7 @@
 
 <header>
   <div class="logo">
-    <span class="logo-mark">NOC</span>
+    <span class="logo-mark">OPS</span>
     <span class="logo-title">INCIDENT LOGGER</span>
   </div>
   <div class="header-right">
@@ -486,7 +486,6 @@
 
 <footer>
   Built by <a href="https://github.com/ohdasdiego" target="_blank">ohdasdiego</a> ·
-  Powered by <a href="https://www.anthropic.com" target="_blank">Claude AI</a> ·
   <a href="https://github.com/ohdasdiego/ai-incident-logger" target="_blank">GitHub</a>
 </footer>
 
@@ -527,7 +526,7 @@ function renderStats(data) {
   document.getElementById("stat-resolved").textContent = data.resolved ?? "—";
 }
 
-// ── Parse AI summary text ─────────────────────────────────
+// ── Parse summary text ──────────────────────────────────────
 function parseSummary(text) {
   if (!text) return [];
   return text.split("\n").map(line => {
@@ -581,7 +580,7 @@ function renderIncidents(incidents) {
           <div class="incident-value">
             ${inc.value}% &nbsp;·&nbsp; threshold ${inc.threshold}% &nbsp;·&nbsp; Telegram: ${inc.notified ? "✓ sent" : "✗ failed"}
           </div>
-          <div class="incident-summary">${summaryHtml || '<span style="color:var(--muted);font-size:0.75rem">No AI summary available</span>'}</div>
+          <div class="incident-summary">${summaryHtml || '<span style="color:var(--muted);font-size:0.75rem">No summary available</span>'}</div>
         </div>
         <div class="incident-meta">
           <span class="incident-time">${ts}</span>
