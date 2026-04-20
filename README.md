@@ -10,6 +10,8 @@ A lightweight alerting and incident tracking system that monitors infrastructure
 
 🔗 **[View incident dashboard →](https://incidents.ado-runner.com)**
 
+![Incident Logger Dashboard](screenshots/dashboard.jpg)
+
 ---
 
 ## What It Does
