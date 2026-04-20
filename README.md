@@ -1,8 +1,8 @@
 # AI Incident Logger
 
-A lightweight alerting and incident tracking system that monitors infrastructure metrics, generates AI-powered incident summaries using Claude, delivers real-time alerts via Telegram, and displays a live incident dashboard.
+A lightweight alerting and incident tracking system that monitors infrastructure metrics, generates AI-powered incident summaries using Claude, delivers real-time alerts via Telegram, and logs everything to a SQLite database with a live dashboard.
 
-> Part of a portfolio targeting AI infrastructure and NOC roles. Works alongside [ai-infra-monitor](https://github.com/ohdasdiego/ai-infra-monitor).
+> Works alongside [ai-infra-monitor](https://github.com/ohdasdiego/ai-infra-monitor) to provide a complete monitoring and alerting pipeline.
 
 ---
 
@@ -19,26 +19,104 @@ A lightweight alerting and incident tracking system that monitors infrastructure
 2. Detects threshold breaches (CPU, memory, disk, processes)
 3. Calls Claude API → structured incident summary (cause, impact, action)
 4. Sends Telegram alert with severity and AI analysis
-5. Logs incident to `incidents.jsonl` with cooldown to prevent duplicates
+5. Writes incident to SQLite with cooldown to prevent duplicates
 
 **Dashboard (Flask, always-on):**
 - Live incident feed with severity filtering
 - Stats: total, critical, warning, active alerts, last 24h
 - Per-incident: AI summary, metric value, Telegram delivery status
 - Acknowledge and Resolve actions per incident
+- Resolved incidents move to archive (separate table, not deleted)
 - Auto-refreshes every 60 seconds
 
-### Example Telegram Alert
+---
+
+## Sample Output
+
+### Telegram Alert
+
+Fires immediately when a threshold is breached:
 
 ```
 🔴 RED ALERT — CPU
 ━━━━━━━━━━━━━━━━━━━━
-📊 Value: 96% (threshold: 95%)
-🕐 Time: 2026-04-18 03:00 UTC
+📊 Value: 96.4% (threshold: 95%)
+🕐 Time: 2026-04-20 06:47 UTC
 
 CAUSE: Sustained high CPU likely caused by a runaway process or spike in workload.
 IMPACT: System responsiveness may degrade; other services could be affected.
 ACTION: Run `top` or `ps aux --sort=-%cpu` to identify and investigate the offending process.
+
+🔗 Live Metrics · Incidents
+```
+
+```
+🟡 YELLOW ALERT — Memory
+━━━━━━━━━━━━━━━━━━━━
+📊 Value: 87.2% (threshold: 85%)
+🕐 Time: 2026-04-20 06:47 UTC
+
+CAUSE: Memory usage elevated, possibly due to a memory leak or increased load.
+IMPACT: Risk of OOM if usage continues to rise.
+ACTION: Run `free -h` and `ps aux --sort=-%mem` to identify the highest consumers.
+
+🔗 Live Metrics · Incidents
+```
+
+### Terminal Log Viewer
+
+```
+$ python view_logs.py --last 5
+
+────────────────────────────────────────────────────────────
+  Active Incidents  (2 of 2)
+────────────────────────────────────────────────────────────
+
+🟡 YELLOW — Memory
+  Time:      2026-04-20T06:47:31+00:00
+  Value:     87.2% (threshold: 85.0%)
+  Telegram:  ✓ sent
+  ACK:       —
+
+CAUSE: Memory usage elevated, possibly due to a memory leak or increased load.
+IMPACT: Risk of OOM if usage continues to rise.
+ACTION: Run `free -h` and `ps aux --sort=-%mem` to identify the highest consumers.
+
+────────────────────────────────────────────────────────────
+
+🔴 RED — CPU
+  Time:      2026-04-20T06:47:31+00:00
+  Value:     96.4% (threshold: 95.0%)
+  Telegram:  ✓ sent
+  ACK:       —
+
+CAUSE: Sustained high CPU likely caused by a runaway process or spike in workload.
+IMPACT: System responsiveness may degrade; other services could be affected.
+ACTION: Run `top` or `ps aux --sort=-%cpu` to identify and investigate the offending process.
+
+────────────────────────────────────────────────────────────
+```
+
+### SQLite Query (direct)
+
+```
+$ sqlite3 logs/incidents.db "SELECT metric, severity, value, timestamp FROM incidents;"
+
+Memory|yellow|87.2|2026-04-20T06:47:31+00:00
+CPU|red|96.4|2026-04-20T06:47:31+00:00
+```
+
+### Cron Log (all clear)
+
+```
+$ tail -f logs/cron.log
+
+[06:45:01] All clear — no thresholds breached.
+[06:50:02] All clear — no thresholds breached.
+[06:55:01] All clear — no thresholds breached.
+[07:00:02] [RED] CPU at 96.4% — generating incident summary...
+  → Telegram alert sent.
+[07:05:01] [RED] CPU at 96.4% — cooldown active, skipping.
 ```
 
 ---
@@ -52,16 +130,28 @@ cron (every 5 min)
         ├── evaluates thresholds
         ├── Claude API → incident summary
         ├── Telegram alert
-        └── logs/incidents.jsonl
+        └── db.py → SQLite (incidents table)
 
 gunicorn (always-on, port 5001)
   └── api.py (Flask)
-        ├── GET  /                     → dashboard UI
-        ├── GET  /api/incidents        → incident list (filterable, paginated)
-        ├── GET  /api/summary          → stats
+        ├── GET  /                          → dashboard UI
+        ├── GET  /api/incidents             → active incident list (filterable, paginated)
+        ├── GET  /api/incidents/archive     → resolved incident archive
+        ├── GET  /api/summary               → stats
         ├── POST /api/incidents/:id/acknowledge
-        └── POST /api/incidents/:id/resolve
+        └── POST /api/incidents/:id/resolve → moves row to incidents_archive
 ```
+
+### Storage: Dual Output
+
+Every incident is written to **two places** simultaneously:
+
+| Output | Purpose |
+|---|---|
+| **Telegram** | Instant push notification — you know immediately without checking anything |
+| **SQLite** | Persistent record — queryable history, powers the dashboard, ACK/resolve workflow |
+
+This mirrors how production alerting platforms (PagerDuty, OpsGenie) work: push notification for awareness, database for tracking and audit trail.
 
 ---
 
@@ -75,6 +165,44 @@ gunicorn (always-on, port 5001)
 | Processes | > 300 | > 500 |
 
 > Memory thresholds are tuned for a 2GB VPS running multiple services. A 1GB host will idle at 70–80%, so aggressive thresholds produce noise. Tune to your baseline.
+
+---
+
+## Database Schema
+
+```sql
+-- Active and acknowledged incidents
+CREATE TABLE incidents (
+    id               TEXT PRIMARY KEY,
+    timestamp        TEXT NOT NULL,
+    metric           TEXT NOT NULL,
+    severity         TEXT NOT NULL,
+    value            REAL NOT NULL,
+    threshold        REAL NOT NULL,
+    summary          TEXT,
+    notified         INTEGER DEFAULT 0,
+    acknowledged     INTEGER DEFAULT 0,
+    acknowledged_at  TEXT
+);
+
+-- Resolved incidents moved here on resolution
+CREATE TABLE incidents_archive (
+    id               TEXT PRIMARY KEY,
+    timestamp        TEXT NOT NULL,
+    metric           TEXT NOT NULL,
+    severity         TEXT NOT NULL,
+    value            REAL NOT NULL,
+    threshold        REAL NOT NULL,
+    summary          TEXT,
+    notified         INTEGER DEFAULT 0,
+    acknowledged     INTEGER DEFAULT 0,
+    acknowledged_at  TEXT,
+    resolved_at      TEXT NOT NULL,
+    archived_at      TEXT NOT NULL
+);
+```
+
+Resolving an incident moves the row from `incidents` → `incidents_archive`. The active dashboard only queries `incidents`; a separate archive view queries `incidents_archive`. This mirrors how production alerting platforms separate active from historical records.
 
 ---
 
@@ -143,11 +271,20 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now incident-logger
 ```
 
-### 8. View logs from terminal
+### 8. View incidents from terminal
 
 ```bash
+# Active incidents
 python view_logs.py
-python view_logs.py --last 10 --severity red
+
+# Filter by severity
+python view_logs.py --severity red
+
+# View resolved/archived
+python view_logs.py --archive
+
+# Direct SQLite query
+sqlite3 logs/incidents.db "SELECT metric, severity, value FROM incidents;"
 ```
 
 ---
@@ -156,65 +293,14 @@ python view_logs.py --last 10 --severity red
 
 | Component | Technology |
 |---|---|
-| Language | Python |
+| Language | Python 3 |
 | AI analysis | Anthropic Claude API (`claude-haiku-4-5`) |
 | Alerting | Telegram Bot API |
+| Storage | SQLite (via `db.py`) |
 | Dashboard | Flask + Gunicorn |
 | Frontend | Vanilla HTML/CSS/JS |
 | Scheduler | cron |
-| Storage | JSONL flat file (SQLite migration planned — see Roadmap) |
-
----
-
-## Roadmap
-
-### v2 — SQLite Migration
-
-The current storage layer uses append-only JSONL flat files, which works well at single-host scale. The planned v2 migration will move to **SQLite** for proper relational storage and archiving.
-
-**Why SQLite:**
-- Zero external dependencies — single `.db` file on disk
-- Full SQL querying: filter by severity, time range, metric type
-- Proper archive table separate from the active incident feed
-- Built into Python standard library — no new deps
-
-**Planned schema:**
-
-```sql
--- Active and acknowledged incidents
-CREATE TABLE incidents (
-    id          TEXT PRIMARY KEY,
-    timestamp   TEXT NOT NULL,
-    metric      TEXT NOT NULL,
-    severity    TEXT NOT NULL,
-    value       REAL NOT NULL,
-    threshold   REAL NOT NULL,
-    summary     TEXT,
-    notified    INTEGER DEFAULT 0,
-    acknowledged INTEGER DEFAULT 0,
-    acknowledged_at TEXT
-);
-
--- Resolved incidents moved here on resolution
-CREATE TABLE incidents_archive (
-    id           TEXT PRIMARY KEY,
-    timestamp    TEXT NOT NULL,
-    metric       TEXT NOT NULL,
-    severity     TEXT NOT NULL,
-    value        REAL NOT NULL,
-    threshold    REAL NOT NULL,
-    summary      TEXT,
-    notified     INTEGER DEFAULT 0,
-    acknowledged INTEGER DEFAULT 0,
-    acknowledged_at TEXT,
-    resolved_at  TEXT NOT NULL,
-    archived_at  TEXT NOT NULL
-);
-```
-
-**Behavior change:** Resolving an incident moves the row from `incidents` → `incidents_archive` instead of flagging it in-place. The active dashboard only queries `incidents`; a separate archive view queries `incidents_archive`.
-
-This mirrors how production alerting platforms (PagerDuty, OpsGenie) separate active from historical incident records.
+| Process management | systemd |
 
 ---
 
