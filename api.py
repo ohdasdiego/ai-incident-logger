@@ -1,42 +1,23 @@
 """
 api.py
-Flask API serving incident log data to the dashboard UI.
+Flask API serving incident data to the dashboard UI.
 Run with: gunicorn api:app --bind 127.0.0.1:5001 --workers 2
-(Port 5001 to avoid conflict with ai-infra-monitor on 5000)
+
+v2: reads/writes go through SQLite via db.py
 """
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+import db
+
 app = Flask(__name__, template_folder="templates")
 CORS(app)
 
-INCIDENT_LOG = Path(__file__).parent / "logs" / "incidents.jsonl"
-STATE_FILE   = Path(__file__).parent / "logs" / "alert_state.json"
-
-
-def load_incidents() -> list:
-    if not INCIDENT_LOG.exists():
-        return []
-    try:
-        with open(INCIDENT_LOG) as f:
-            return [json.loads(line) for line in f if line.strip()]
-    except Exception:
-        return []
-
-
-def load_state() -> dict:
-    if not STATE_FILE.exists():
-        return {}
-    try:
-        with open(STATE_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return {}
+db.init_db()
 
 
 @app.route("/")
@@ -47,116 +28,72 @@ def index():
 @app.route("/api/incidents")
 def incidents():
     """
-    Returns incidents with optional filters:
+    Returns active incidents with optional filters:
     ?severity=red|yellow
-    ?limit=N
-    ?offset=N
+    ?limit=N  (default 50)
+    ?offset=N (default 0)
     """
-    all_incidents = load_incidents()
+    severity = request.args.get("severity") or None
+    limit    = int(request.args.get("limit", 50))
+    offset   = int(request.args.get("offset", 0))
 
-    severity = request.args.get("severity")
-    if severity:
-        all_incidents = [i for i in all_incidents if i.get("severity") == severity]
-
-    # Most recent first
-    all_incidents = list(reversed(all_incidents))
-
-    total = len(all_incidents)
-    limit  = int(request.args.get("limit", 50))
-    offset = int(request.args.get("offset", 0))
-    page   = all_incidents[offset:offset + limit]
+    total, page = db.get_incidents(severity=severity, limit=limit, offset=offset)
 
     return jsonify({
-        "total": total,
-        "limit": limit,
-        "offset": offset,
+        "total":     total,
+        "limit":     limit,
+        "offset":    offset,
         "incidents": page,
     })
+
+
+@app.route("/api/incidents/archive")
+def archive():
+    """Returns resolved (archived) incidents."""
+    limit  = int(request.args.get("limit", 50))
+    offset = int(request.args.get("offset", 0))
+    total, page = db.get_archive(limit=limit, offset=offset)
+    return jsonify({"total": total, "limit": limit, "offset": offset, "incidents": page})
 
 
 @app.route("/api/summary")
 def summary():
     """High-level stats for the dashboard header."""
-    all_incidents = load_incidents()
+    data = db.get_summary()
 
-    total    = len(all_incidents)
-    red      = sum(1 for i in all_incidents if i.get("severity") == "red")
-    yellow   = sum(1 for i in all_incidents if i.get("severity") == "yellow")
-    notified = sum(1 for i in all_incidents if i.get("notified"))
-    resolved = sum(1 for i in all_incidents if i.get("resolved"))
+    # Active alerts: pull cooldown state from flat JSON (separate concern)
+    import json, time
+    state_file = Path(__file__).parent / "logs" / "alert_state.json"
+    active = 0
+    if state_file.exists():
+        try:
+            state = json.loads(state_file.read_text())
+            active = sum(1 for v in state.values() if (time.time() - v) < 300)
+        except Exception:
+            pass
 
-    # Last 24h
-    now = datetime.now(timezone.utc).timestamp()
-    last_24h = sum(
-        1 for i in all_incidents
-        if (now - datetime.fromisoformat(i["timestamp"]).timestamp()) < 86400
-    )
-
-    # Most recent incident
-    latest = all_incidents[-1] if all_incidents else None
-
-    # Active alerts (currently in cooldown)
-    state = load_state()
-    import time
-    active = [k for k, v in state.items() if (time.time() - v) < 300]
-
-    return jsonify({
-        "total_incidents": total,
-        "red": red,
-        "yellow": yellow,
-        "notified": notified,
-        "resolved": resolved,
-        "last_24h": last_24h,
-        "active_alerts": len(active),
-        "latest_incident": latest,
-    })
+    data["active_alerts"] = active
+    return jsonify(data)
 
 
 @app.route("/api/incidents/<string:incident_id>/acknowledge", methods=["POST"])
 def acknowledge(incident_id):
-    """Mark an incident as acknowledged by its unique ID."""
-    all_incidents = load_incidents()
-    match = next((i for i, inc in enumerate(all_incidents) if inc.get("id") == incident_id), None)
-    if match is None:
-        return jsonify({"error": "Incident not found"}), 404
-
-    all_incidents[match]["acknowledged"] = True
-    all_incidents[match]["acknowledged_at"] = datetime.now(timezone.utc).isoformat()
-
-    with open(INCIDENT_LOG, "w") as f:
-        for entry in all_incidents:
-            f.write(json.dumps(entry) + "\n")
-
-    return jsonify({"ok": True})
+    if db.acknowledge_incident(incident_id):
+        return jsonify({"ok": True})
+    return jsonify({"error": "Incident not found or already acknowledged"}), 404
 
 
 @app.route("/api/incidents/<string:incident_id>/resolve", methods=["POST"])
 def resolve(incident_id):
-    """Mark an incident as resolved by its unique ID."""
-    all_incidents = load_incidents()
-    match = next((i for i, inc in enumerate(all_incidents) if inc.get("id") == incident_id), None)
-    if match is None:
-        return jsonify({"error": "Incident not found"}), 404
-
-    all_incidents[match]["resolved"] = True
-    all_incidents[match]["resolved_at"] = datetime.now(timezone.utc).isoformat()
-
-    with open(INCIDENT_LOG, "w") as f:
-        for entry in all_incidents:
-            f.write(json.dumps(entry) + "\n")
-
-    return jsonify({"ok": True})
+    if db.resolve_incident(incident_id):
+        return jsonify({"ok": True})
+    return jsonify({"error": "Incident not found"}), 404
 
 
 @app.route("/api/incidents/clear-resolved", methods=["POST"])
 def clear_resolved():
-    """Remove all resolved incidents from the log."""
-    all_incidents = load_incidents()
-    remaining = [i for i in all_incidents if not i.get("resolved")]
-    with open(INCIDENT_LOG, "w") as f:
-        for entry in remaining:
-            f.write(json.dumps(entry) + "\n")
-    return jsonify({"ok": True, "removed": len(all_incidents) - len(remaining)})
+    removed = db.clear_archive()
+    return jsonify({"ok": True, "removed": removed})
 
 
 @app.route("/health")

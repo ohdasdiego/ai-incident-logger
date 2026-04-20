@@ -1,11 +1,10 @@
 """
 alerter.py
 Reads metrics from ai-infra-monitor, detects threshold breaches,
-generates Claude AI incident summaries, and sends Telegram alerts.
+generates incident summaries via Claude, and sends Telegram alerts.
 Run via cron every 5 minutes.
 
-Designed to be lightweight — no database, no web server.
-State is tracked in a simple JSON file to avoid duplicate alerts.
+v2: incidents stored in SQLite via db.py
 """
 
 import json
@@ -18,31 +17,30 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+import db
+
 load_dotenv()
 
 # ── Config ────────────────────────────────────────────────
 METRICS_FILE    = Path(os.getenv("METRICS_FILE", "../ai-infra-monitor/data/metrics.json"))
 STATE_FILE      = Path(__file__).parent / "logs" / "alert_state.json"
-INCIDENT_LOG    = Path(__file__).parent / "logs" / "incidents.jsonl"
 
 TELEGRAM_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT   = os.getenv("TELEGRAM_CHAT_ID")
 ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY")
 MODEL           = "claude-haiku-4-5-20251001"
 
-# How long to suppress repeat alerts for the same issue (seconds)
 COOLDOWN_SECONDS = 1800  # 30 minutes
 
-# Thresholds — tuned for a 2GB VPS running multiple services
 THRESHOLDS = {
-    "cpu": {"yellow": 80, "red": 95},
-    "memory": {"yellow": 85, "red": 92},
-    "disk": {"yellow": 80, "red": 90},
+    "cpu":       {"yellow": 80,  "red": 95},
+    "memory":    {"yellow": 85,  "red": 92},
+    "disk":      {"yellow": 80,  "red": 90},
     "processes": {"yellow": 300, "red": 500},
 }
 
 
-# ── State management (prevents duplicate alerts) ──────────
+# ── Cooldown state (flat JSON — lightweight, not incident data) ───
 def load_state() -> dict:
     if STATE_FILE.exists():
         try:
@@ -60,8 +58,7 @@ def save_state(state: dict):
 
 
 def is_cooling_down(state: dict, key: str) -> bool:
-    last = state.get(key, 0)
-    return (time.time() - last) < COOLDOWN_SECONDS
+    return (time.time() - state.get(key, 0)) < COOLDOWN_SECONDS
 
 
 def mark_alerted(state: dict, key: str):
@@ -70,38 +67,30 @@ def mark_alerted(state: dict, key: str):
 
 # ── Metric evaluation ─────────────────────────────────────
 def evaluate(metrics: dict) -> list[dict]:
-    """
-    Returns a list of triggered alerts:
-    [{"key": str, "severity": "yellow"|"red", "metric": str, "value": float, "threshold": float}]
-    """
     latest = metrics.get("latest", {})
     alerts = []
 
-    # CPU
     cpu = latest.get("cpu_percent", 0)
     if cpu >= THRESHOLDS["cpu"]["red"]:
         alerts.append({"key": "cpu", "severity": "red", "metric": "CPU", "value": cpu, "threshold": THRESHOLDS["cpu"]["red"]})
     elif cpu >= THRESHOLDS["cpu"]["yellow"]:
         alerts.append({"key": "cpu", "severity": "yellow", "metric": "CPU", "value": cpu, "threshold": THRESHOLDS["cpu"]["yellow"]})
 
-    # Memory
     mem = latest.get("memory", {}).get("percent", 0)
     if mem >= THRESHOLDS["memory"]["red"]:
         alerts.append({"key": "memory", "severity": "red", "metric": "Memory", "value": mem, "threshold": THRESHOLDS["memory"]["red"]})
     elif mem >= THRESHOLDS["memory"]["yellow"]:
         alerts.append({"key": "memory", "severity": "yellow", "metric": "Memory", "value": mem, "threshold": THRESHOLDS["memory"]["yellow"]})
 
-    # Disks
     for disk in latest.get("disks", []):
         mount = disk["mountpoint"]
-        pct = disk["percent"]
-        key = f"disk_{mount}"
+        pct   = disk["percent"]
+        key   = f"disk_{mount}"
         if pct >= THRESHOLDS["disk"]["red"]:
             alerts.append({"key": key, "severity": "red", "metric": f"Disk {mount}", "value": pct, "threshold": THRESHOLDS["disk"]["red"]})
         elif pct >= THRESHOLDS["disk"]["yellow"]:
             alerts.append({"key": key, "severity": "yellow", "metric": f"Disk {mount}", "value": pct, "threshold": THRESHOLDS["disk"]["yellow"]})
 
-    # Processes
     procs = latest.get("process_count", 0)
     if procs >= THRESHOLDS["processes"]["red"]:
         alerts.append({"key": "processes", "severity": "red", "metric": "Process count", "value": procs, "threshold": THRESHOLDS["processes"]["red"]})
@@ -115,7 +104,7 @@ def evaluate(metrics: dict) -> list[dict]:
 def generate_incident_summary(alert: dict, metrics: dict) -> str:
     latest = metrics.get("latest", {})
 
-    prompt = f"""You are a NOC analyst assistant. Generate a concise incident summary for the following alert.
+    prompt = f"""You are an infrastructure operations analyst. Generate a concise incident summary for the following alert.
 
 Alert: {alert['metric']} is at {alert['value']}% (threshold: {alert['threshold']}%, severity: {alert['severity'].upper()})
 
@@ -160,9 +149,9 @@ def send_telegram(message: str):
 
 
 def format_telegram_message(alert: dict, summary: str) -> str:
-    icon = "🔴" if alert["severity"] == "red" else "🟡"
+    icon     = "🔴" if alert["severity"] == "red" else "🟡"
     severity = alert["severity"].upper()
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    ts       = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     return (
         f"{icon} *{severity} ALERT — {alert['metric']}*\n"
@@ -171,29 +160,14 @@ def format_telegram_message(alert: dict, summary: str) -> str:
         f"🕐 Time: `{ts}`\n\n"
         f"{summary}\n\n"
         f"🔗 [Live Metrics](https://monitor.ado-runner.com) · [Incidents](https://incidents.ado-runner.com)\n"
-        f"_AI Incident Logger · ai-infra-monitor_"
+        f"_Incident Logger · infra-monitor_"
     )
-
-
-# ── Incident log ──────────────────────────────────────────
-def log_incident(alert: dict, summary: str, notified: bool):
-    entry = {
-        "id": str(uuid.uuid4()),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "metric": alert["metric"],
-        "severity": alert["severity"],
-        "value": alert["value"],
-        "threshold": alert["threshold"],
-        "summary": summary,
-        "notified": notified,
-    }
-    INCIDENT_LOG.parent.mkdir(parents=True, exist_ok=True)
-    with open(INCIDENT_LOG, "a") as f:
-        f.write(json.dumps(entry) + "\n")
 
 
 # ── Main ──────────────────────────────────────────────────
 def main():
+    db.init_db()
+
     if not METRICS_FILE.exists():
         print("No metrics file found. Is ai-infra-monitor running?")
         return
@@ -201,7 +175,7 @@ def main():
     with open(METRICS_FILE) as f:
         metrics = json.load(f)
 
-    alerts = evaluate(metrics)
+    alerts  = evaluate(metrics)
 
     if not alerts:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] All clear — no thresholds breached.")
@@ -221,7 +195,7 @@ def main():
         try:
             summary = generate_incident_summary(alert, metrics)
         except Exception as e:
-            summary = f"CAUSE: Unable to generate AI summary ({e})\nIMPACT: Unknown\nACTION: Investigate manually."
+            summary = f"CAUSE: Unable to generate summary ({e})\nIMPACT: Unknown\nACTION: Investigate manually."
 
         notified = False
         try:
@@ -232,7 +206,17 @@ def main():
         except Exception as e:
             print(f"  → Telegram failed: {e}")
 
-        log_incident(alert, summary, notified)
+        db.insert_incident({
+            "id":        str(uuid.uuid4()),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metric":    alert["metric"],
+            "severity":  alert["severity"],
+            "value":     alert["value"],
+            "threshold": alert["threshold"],
+            "summary":   summary,
+            "notified":  int(notified),
+        })
+
         mark_alerted(state, key)
 
     save_state(state)
