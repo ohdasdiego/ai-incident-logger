@@ -306,6 +306,16 @@ sqlite3 logs/incidents.db "SELECT metric, severity, value FROM incidents;"
 
 ---
 
+## 🗺️ Roadmap
+
+- [ ] Runbook integration — auto-query RAG Runbook Assistant on incident creation and include procedure in Telegram alert
+- [ ] Email/PagerDuty notification support alongside Telegram
+- [ ] Escalation policy — auto-escalate unacknowledged incidents after configurable timeout
+- [ ] Incident history charts — frequency and severity trends over time
+- [ ] Configurable thresholds via dashboard UI — no config file edits required
+
+---
+
 ## Author
 
 **Diego Perez** · [github.com/ohdasdiego](https://github.com/ohdasdiego)
