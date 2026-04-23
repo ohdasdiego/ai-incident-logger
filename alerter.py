@@ -84,6 +84,8 @@ def evaluate(metrics: dict) -> list[dict]:
 
     for disk in latest.get("disks", []):
         mount = disk["mountpoint"]
+        if mount.startswith("/snap/"):
+            continue
         pct   = disk["percent"]
         key   = f"disk_{mount}"
         if pct >= THRESHOLDS["disk"]["red"]:
