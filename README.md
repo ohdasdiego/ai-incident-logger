@@ -316,6 +316,20 @@ sqlite3 logs/incidents.db "SELECT metric, severity, value FROM incidents;"
 
 ---
 
+## ADOStack
+
+| # | Project | Live | Role |
+|---|---------|------|------|
+| 1 | [AI Infra Monitor](https://github.com/ohdasdiego/ai-infra-monitor) | [monitor.ado-runner.com](https://monitor.ado-runner.com) | Metric collection + AI health analysis |
+| **2** | **AI Incident Logger** | **[incidents.ado-runner.com](https://incidents.ado-runner.com)** | **← You are here** |
+| 3 | [Code Auditor](https://github.com/ohdasdiego/code-auditor) | CLI | AI-powered code review |
+| 4 | [RAG Runbook Assistant](https://github.com/ohdasdiego/rag-runbook-assistant) | [runbooks.ado-runner.com](https://runbooks.ado-runner.com) | Vector search over IT runbooks |
+| 5 | [K8s Event Summarizer](https://github.com/ohdasdiego/k8s-event-summarizer) | [k8s.ado-runner.com](https://k8s.ado-runner.com) | Kubernetes cluster health digests |
+| 6 | [AI Incident Orchestrator](https://github.com/ohdasdiego/ai-incident-orchestrator) | [orchestrator.ado-runner.com](https://orchestrator.ado-runner.com) | Multi-agent triage pipeline |
+| 7 | [On-Call Assistant](https://github.com/ohdasdiego/oncall-assistant) | [oncall.ado-runner.com](https://oncall.ado-runner.com) | Incident response + escalation routing |
+
+---
+
 ## Author
 
 **Diego Perez** · [github.com/ohdasdiego](https://github.com/ohdasdiego)
