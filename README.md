@@ -1,8 +1,8 @@
 # AI Incident Logger
 
-A lightweight alerting and incident tracking system that monitors infrastructure metrics, generates AI-powered incident summaries using Claude, delivers real-time alerts via Telegram, and logs everything to a SQLite database with a live dashboard.
+A lightweight alerting and incident tracking system that monitors infrastructure metrics, generates AI-powered incident summaries using Claude, and routes alerts through the [On-Call Assistant](https://github.com/ohdasdiego/oncall-assistant) for lifecycle tracking, action buttons, and response plans. Logs everything to SQLite with a live dashboard.
 
-> Works alongside [ai-infra-monitor](https://github.com/ohdasdiego/ai-infra-monitor) to provide a complete monitoring and alerting pipeline.
+> Detection engine for the ADOStack platform. Works alongside [ai-infra-monitor](https://github.com/ohdasdiego/ai-infra-monitor) and [oncall-assistant](https://github.com/ohdasdiego/oncall-assistant) — threshold breach detected here becomes an incident there.
 
 ---
 
@@ -308,11 +308,10 @@ sqlite3 logs/incidents.db "SELECT metric, severity, value FROM incidents;"
 
 ## 🗺️ Roadmap
 
-- [ ] Runbook integration — auto-query RAG Runbook Assistant on incident creation and include procedure in Telegram alert
-- [ ] Email/PagerDuty notification support alongside Telegram
-- [ ] Escalation policy — auto-escalate unacknowledged incidents after configurable timeout
-- [ ] Incident history charts — frequency and severity trends over time
+- [x] On-Call Assistant integration — threshold breaches route via HMAC-signed webhook to On-Call for lifecycle tracking and action buttons
 - [ ] Configurable thresholds via dashboard UI — no config file edits required
+- [ ] Incident history charts — frequency and severity trends over time
+- [ ] Email/PagerDuty notification support as secondary channel
 
 ---
 

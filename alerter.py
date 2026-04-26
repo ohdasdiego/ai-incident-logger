@@ -7,6 +7,8 @@ Run via cron every 5 minutes.
 v2: incidents stored in SQLite via db.py
 """
 
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -29,6 +31,9 @@ TELEGRAM_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT   = os.getenv("TELEGRAM_CHAT_ID")
 ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY")
 MODEL           = "claude-haiku-4-5-20251001"
+
+ONCALL_WEBHOOK_URL    = os.getenv("ONCALL_WEBHOOK_URL", "")
+ONCALL_WEBHOOK_SECRET = os.getenv("ONCALL_WEBHOOK_SECRET", "")
 
 COOLDOWN_SECONDS = 1800  # 30 minutes
 
@@ -166,6 +171,51 @@ def format_telegram_message(alert: dict, summary: str) -> str:
     )
 
 
+# ── On-Call Assistant webhook ────────────────────────────────
+
+def fire_oncall_webhook(alert: dict, summary: str, metrics: dict) -> bool:
+    """POST alert to On-Call Assistant. Returns True on success."""
+    if not ONCALL_WEBHOOK_URL:
+        return False
+
+    severity_map = {"red": "high", "yellow": "medium"}
+    severity = severity_map.get(alert["severity"], "medium")
+
+    latest = metrics.get("latest", {})
+    cpu = latest.get("cpu_percent", "?")
+    mem = latest.get("memory", {}).get("percent", "?")
+
+    # Extract CAUSE/IMPACT/ACTION lines from summary for description
+    desc_lines = [summary, f"CPU: {cpu}% | Memory: {mem}%"]
+    description = "\n".join(desc_lines)
+
+    payload = {
+        "title": f"{alert['metric']} alert on claw-gateway1 — {alert['value']}% (threshold: {alert['threshold']}%)",
+        "description": description,
+        "severity": severity,
+        "host": "claw-gateway1",
+        "metric": alert["key"],
+        "value": alert["value"]
+    }
+
+    body = json.dumps(payload).encode()
+    headers = {"Content-Type": "application/json"}
+
+    if ONCALL_WEBHOOK_SECRET:
+        sig = hmac.new(ONCALL_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
+        headers["X-Webhook-Signature"] = f"sha256={sig}"
+
+    try:
+        resp = requests.post(ONCALL_WEBHOOK_URL, data=body, headers=headers, timeout=10)
+        resp.raise_for_status()
+        incident_id = resp.json().get("incident_id", "?")
+        print(f"  → On-Call Assistant: incident #{incident_id} opened.")
+        return True
+    except Exception as e:
+        print(f"  → On-Call webhook failed: {e}")
+        return False
+
+
 # ── Main ──────────────────────────────────────────────────
 def main():
     db.init_db()
@@ -200,13 +250,20 @@ def main():
             summary = f"CAUSE: Unable to generate summary ({e})\nIMPACT: Unknown\nACTION: Investigate manually."
 
         notified = False
-        try:
-            message = format_telegram_message(alert, summary)
-            send_telegram(message)
-            notified = True
-            print(f"  → Telegram alert sent.")
-        except Exception as e:
-            print(f"  → Telegram failed: {e}")
+
+        # Route to On-Call Assistant if configured (preferred) — it owns the Telegram alert
+        if ONCALL_WEBHOOK_URL:
+            notified = fire_oncall_webhook(alert, summary, metrics)
+        
+        # Fallback: send Telegram directly if On-Call is not configured or failed
+        if not notified:
+            try:
+                message = format_telegram_message(alert, summary)
+                send_telegram(message)
+                notified = True
+                print(f"  → Telegram alert sent (direct — On-Call not available).")
+            except Exception as e:
+                print(f"  → Telegram failed: {e}")
 
         db.insert_incident({
             "id":        str(uuid.uuid4()),
