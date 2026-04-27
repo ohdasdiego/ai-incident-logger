@@ -35,10 +35,10 @@ MODEL           = "claude-haiku-4-5-20251001"
 ONCALL_WEBHOOK_URL    = os.getenv("ONCALL_WEBHOOK_URL", "")
 ONCALL_WEBHOOK_SECRET = os.getenv("ONCALL_WEBHOOK_SECRET", "")
 
-COOLDOWN_SECONDS = 1800  # 30 minutes
+COOLDOWN_SECONDS = 7200  # 2 hours
 
 THRESHOLDS = {
-    "cpu":       {"yellow": 80,  "red": 95},
+    "cpu":       {"yellow": 90,  "red": 97},
     "memory":    {"yellow": 85,  "red": 92},
     "disk":      {"yellow": 80,  "red": 90},
     "processes": {"yellow": 300, "red": 500},
@@ -109,8 +109,18 @@ def evaluate(metrics: dict) -> list[dict]:
 
 # ── Claude incident summary ───────────────────────────────
 def generate_incident_summary(alert: dict, metrics: dict) -> str:
+    """Generate incident summary. Uses static template for yellow alerts to save API credits."""
     latest = metrics.get("latest", {})
 
+    # Skip Claude for yellow/medium — static template is good enough
+    if alert["severity"] == "yellow":
+        return (
+            f"CAUSE: {alert['metric']} exceeded the {alert['threshold']}% warning threshold.\n"
+            f"IMPACT: Performance may degrade if the trend continues.\n"
+            f"ACTION: Monitor for sustained elevation; investigate if it persists beyond 15 minutes."
+        )
+
+    # Only call Claude for red/critical alerts
     prompt = f"""You are an infrastructure operations analyst. Generate a concise incident summary for the following alert.
 
 Alert: {alert['metric']} is at {alert['value']}% (threshold: {alert['threshold']}%, severity: {alert['severity'].upper()})
@@ -135,7 +145,7 @@ ACTION: <recommended immediate action in one sentence>"""
         },
         json={
             "model": MODEL,
-            "max_tokens": 200,
+            "max_tokens": 150,
             "messages": [{"role": "user", "content": prompt}],
         },
         timeout=20,
