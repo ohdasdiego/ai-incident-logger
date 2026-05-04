@@ -15,7 +15,7 @@ import argparse
 
 import db
 
-ICONS  = {"red": "[RED]", "yellow": "[YELLOW]"}
+ICONS  = {"red": "🔴", "yellow": "🟡"}
 COLORS = {
     "red":    "\033[91m",
     "yellow": "\033[93m",
@@ -34,10 +34,10 @@ def parse_args():
 
 
 def print_incident(e: dict, archived: bool = False):
-    icon    = ICONS.get(e["severity"], "[?]")
+    icon    = ICONS.get(e["severity"], "⚪")
     color   = COLORS.get(e["severity"], "")
-    sent    = "sent"  if e.get("notified")     else "failed"
-    ack     = "acked" if e.get("acknowledged") else "—"
+    sent    = "✓ sent"  if e.get("notified")     else "✗ failed"
+    ack     = "✓ acked" if e.get("acknowledged") else "—"
 
     label = "ARCHIVED" if archived else e["severity"].upper()
     print(f"{color}{COLORS['bold']}{icon} {label} — {e['metric']}{COLORS['reset']}")
