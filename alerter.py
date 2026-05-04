@@ -166,17 +166,17 @@ def send_telegram(message: str):
 
 
 def format_telegram_message(alert: dict, summary: str) -> str:
-    icon     = "🔴" if alert["severity"] == "red" else "🟡"
+    prefix   = "[RED]" if alert["severity"] == "red" else "[YELLOW]"
     severity = alert["severity"].upper()
     ts       = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     return (
-        f"{icon} *{severity} ALERT — {alert['metric']}*\n"
+        f"{prefix} *{severity} ALERT — {alert['metric']}*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 Value: `{alert['value']}%` (threshold: `{alert['threshold']}%`)\n"
-        f"🕐 Time: `{ts}`\n\n"
+        f"Value: `{alert['value']}%` (threshold: `{alert['threshold']}%`)\n"
+        f"Time: `{ts}`\n\n"
         f"{summary}\n\n"
-        f"🔗 [Live Metrics](https://monitor.ado-runner.com) · [Incidents](https://incidents.ado-runner.com)\n"
+        f"[Live Metrics](https://monitor.ado-runner.com) · [Incidents](https://incidents.ado-runner.com)\n"
         f"_Incident Logger · infra-monitor_"
     )
 

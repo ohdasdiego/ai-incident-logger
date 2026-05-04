@@ -8,7 +8,7 @@ A lightweight alerting and incident tracking system that monitors infrastructure
 
 ## Live Demo
 
-🔗 **[View incident dashboard →](https://incidents.ado-runner.com)**
+ **[View incident dashboard →](https://incidents.ado-runner.com)**
 
 ![Incident Logger Dashboard](screenshots/dashboard.jpg)
 
@@ -40,29 +40,29 @@ A lightweight alerting and incident tracking system that monitors infrastructure
 Fires immediately when a threshold is breached:
 
 ```
-🔴 RED ALERT — CPU
+ RED ALERT — CPU
 ━━━━━━━━━━━━━━━━━━━━
-📊 Value: 96.4% (threshold: 95%)
-🕐 Time: 2026-04-20 06:47 UTC
+ Value: 96.4% (threshold: 95%)
+ Time: 2026-04-20 06:47 UTC
 
 CAUSE: Sustained high CPU likely caused by a runaway process or spike in workload.
 IMPACT: System responsiveness may degrade; other services could be affected.
 ACTION: Run `top` or `ps aux --sort=-%cpu` to identify and investigate the offending process.
 
-🔗 Live Metrics · Incidents
+ Live Metrics · Incidents
 ```
 
 ```
-🟡 YELLOW ALERT — Memory
+ YELLOW ALERT — Memory
 ━━━━━━━━━━━━━━━━━━━━
-📊 Value: 87.2% (threshold: 85%)
-🕐 Time: 2026-04-20 06:47 UTC
+ Value: 87.2% (threshold: 85%)
+ Time: 2026-04-20 06:47 UTC
 
 CAUSE: Memory usage elevated, possibly due to a memory leak or increased load.
 IMPACT: Risk of OOM if usage continues to rise.
 ACTION: Run `free -h` and `ps aux --sort=-%mem` to identify the highest consumers.
 
-🔗 Live Metrics · Incidents
+ Live Metrics · Incidents
 ```
 
 ### Terminal Log Viewer
@@ -71,14 +71,14 @@ ACTION: Run `free -h` and `ps aux --sort=-%mem` to identify the highest consumer
 $ python view_logs.py --last 5
 
 ────────────────────────────────────────────────────────────
-  Active Incidents  (2 of 2)
+ Active Incidents (2 of 2)
 ────────────────────────────────────────────────────────────
 
-🟡 YELLOW — Memory
-  Time:      2026-04-20T06:47:31+00:00
-  Value:     87.2% (threshold: 85.0%)
-  Telegram:  ✓ sent
-  ACK:       —
+ YELLOW — Memory
+ Time: 2026-04-20T06:47:31+00:00
+ Value: 87.2% (threshold: 85.0%)
+ Telegram: sent
+ ACK: —
 
 CAUSE: Memory usage elevated, possibly due to a memory leak or increased load.
 IMPACT: Risk of OOM if usage continues to rise.
@@ -86,11 +86,11 @@ ACTION: Run `free -h` and `ps aux --sort=-%mem` to identify the highest consumer
 
 ────────────────────────────────────────────────────────────
 
-🔴 RED — CPU
-  Time:      2026-04-20T06:47:31+00:00
-  Value:     96.4% (threshold: 95.0%)
-  Telegram:  ✓ sent
-  ACK:       —
+ RED — CPU
+ Time: 2026-04-20T06:47:31+00:00
+ Value: 96.4% (threshold: 95.0%)
+ Telegram: sent
+ ACK: —
 
 CAUSE: Sustained high CPU likely caused by a runaway process or spike in workload.
 IMPACT: System responsiveness may degrade; other services could be affected.
@@ -117,7 +117,7 @@ $ tail -f logs/cron.log
 [06:50:02] All clear — no thresholds breached.
 [06:55:01] All clear — no thresholds breached.
 [07:00:02] [RED] CPU at 96.4% — generating incident summary...
-  → Telegram alert sent.
+ → Telegram alert sent.
 [07:05:01] [RED] CPU at 96.4% — cooldown active, skipping.
 ```
 
@@ -127,21 +127,21 @@ $ tail -f logs/cron.log
 
 ```
 cron (every 5 min)
-  └── alerter.py
-        ├── reads ../ai-infra-monitor/data/metrics.json
-        ├── evaluates thresholds
-        ├── Claude API → incident summary
-        ├── Telegram alert
-        └── db.py → SQLite (incidents table)
+ └── alerter.py
+ ├── reads ../ai-infra-monitor/data/metrics.json
+ ├── evaluates thresholds
+ ├── Claude API → incident summary
+ ├── Telegram alert
+ └── db.py → SQLite (incidents table)
 
 gunicorn (always-on, port 5001)
-  └── api.py (Flask)
-        ├── GET  /                          → dashboard UI
-        ├── GET  /api/incidents             → active incident list (filterable, paginated)
-        ├── GET  /api/incidents/archive     → resolved incident archive
-        ├── GET  /api/summary               → stats
-        ├── POST /api/incidents/:id/acknowledge
-        └── POST /api/incidents/:id/resolve → moves row to incidents_archive
+ └── api.py (Flask)
+ ├── GET / → dashboard UI
+ ├── GET /api/incidents → active incident list (filterable, paginated)
+ ├── GET /api/incidents/archive → resolved incident archive
+ ├── GET /api/summary → stats
+ ├── POST /api/incidents/:id/acknowledge
+ └── POST /api/incidents/:id/resolve → moves row to incidents_archive
 ```
 
 ### Storage: Dual Output
@@ -159,7 +159,7 @@ This mirrors how production alerting platforms (PagerDuty, OpsGenie) work: push 
 
 ## Thresholds
 
-| Metric | Warning 🟡 | Critical 🔴 |
+| Metric | Warning | Critical |
 |---|---|---|
 | CPU | > 80% | > 95% |
 | Memory | > 85% | > 92% |
@@ -175,32 +175,32 @@ This mirrors how production alerting platforms (PagerDuty, OpsGenie) work: push 
 ```sql
 -- Active and acknowledged incidents
 CREATE TABLE incidents (
-    id               TEXT PRIMARY KEY,
-    timestamp        TEXT NOT NULL,
-    metric           TEXT NOT NULL,
-    severity         TEXT NOT NULL,
-    value            REAL NOT NULL,
-    threshold        REAL NOT NULL,
-    summary          TEXT,
-    notified         INTEGER DEFAULT 0,
-    acknowledged     INTEGER DEFAULT 0,
-    acknowledged_at  TEXT
+ id TEXT PRIMARY KEY,
+ timestamp TEXT NOT NULL,
+ metric TEXT NOT NULL,
+ severity TEXT NOT NULL,
+ value REAL NOT NULL,
+ threshold REAL NOT NULL,
+ summary TEXT,
+ notified INTEGER DEFAULT 0,
+ acknowledged INTEGER DEFAULT 0,
+ acknowledged_at TEXT
 );
 
 -- Resolved incidents moved here on resolution
 CREATE TABLE incidents_archive (
-    id               TEXT PRIMARY KEY,
-    timestamp        TEXT NOT NULL,
-    metric           TEXT NOT NULL,
-    severity         TEXT NOT NULL,
-    value            REAL NOT NULL,
-    threshold        REAL NOT NULL,
-    summary          TEXT,
-    notified         INTEGER DEFAULT 0,
-    acknowledged     INTEGER DEFAULT 0,
-    acknowledged_at  TEXT,
-    resolved_at      TEXT NOT NULL,
-    archived_at      TEXT NOT NULL
+ id TEXT PRIMARY KEY,
+ timestamp TEXT NOT NULL,
+ metric TEXT NOT NULL,
+ severity TEXT NOT NULL,
+ value REAL NOT NULL,
+ threshold REAL NOT NULL,
+ summary TEXT,
+ notified INTEGER DEFAULT 0,
+ acknowledged INTEGER DEFAULT 0,
+ acknowledged_at TEXT,
+ resolved_at TEXT NOT NULL,
+ archived_at TEXT NOT NULL
 );
 ```
 
@@ -220,7 +220,7 @@ Resolving an incident moves the row from `incidents` → `incidents_archive`. Th
 1. Message **@BotFather** on Telegram → send `/newbot`
 2. Copy the bot token
 3. Start a chat with your bot, then visit:
-   `https://api.telegram.org/bot<TOKEN>/getUpdates`
+ `https://api.telegram.org/bot<TOKEN>/getUpdates`
 4. Send any message to the bot, refresh the URL, copy your `chat.id`
 
 ### 2. Install
@@ -267,7 +267,7 @@ crontab -e
 ### 7. Run as systemd service
 
 ```bash
-nano incident-logger.service   # replace YOUR_LINUX_USER
+nano incident-logger.service # replace YOUR_LINUX_USER
 sudo cp incident-logger.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now incident-logger
@@ -306,7 +306,7 @@ sqlite3 logs/incidents.db "SELECT metric, severity, value FROM incidents;"
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] On-Call Assistant integration — threshold breaches route via HMAC-signed webhook to On-Call for lifecycle tracking and action buttons
 - [ ] Configurable thresholds via dashboard UI — no config file edits required

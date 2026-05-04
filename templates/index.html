@@ -500,10 +500,10 @@
   <div class="toolbar">
     <span class="toolbar-label">Filter:</span>
     <button class="filter-btn active" data-filter="all">ALL</button>
-    <button class="filter-btn red-f" data-filter="red">🔴 CRITICAL</button>
-    <button class="filter-btn yellow-f" data-filter="yellow">🟡 WARNING</button>
+    <button class="filter-btn red-f" data-filter="red">CRITICAL</button>
+    <button class="filter-btn yellow-f" data-filter="yellow">WARNING</button>
     <div class="spacer"></div>
-    <button class="refresh-btn" id="clear-resolved-btn">✕ CLEAR RESOLVED</button>
+    <button class="refresh-btn" id="clear-resolved-btn">CLEAR RESOLVED</button>
     <button class="refresh-btn" id="refresh-btn">↻ REFRESH</button>
   </div>
 
@@ -579,14 +579,14 @@ function renderIncidents(incidents) {
   if (!incidents.length) {
     container.innerHTML = `
       <div class="empty">
-        <div class="big">✓</div>
+        <div class="big">--</div>
         No incidents match this filter.
       </div>`;
     return;
   }
 
   container.innerHTML = incidents.map((inc) => {
-    const icon   = inc.severity === "red" ? "🔴" : "🟡";
+    const icon   = inc.severity === "red" ? "[RED]" : "[WARN]";
     const ts     = new Date(inc.timestamp).toLocaleString();
     const lines  = parseSummary(inc.summary || "");
     const isAck  = inc.acknowledged;
@@ -615,7 +615,7 @@ function renderIncidents(incidents) {
             ${badges}
           </div>
           <div class="incident-value">
-            ${inc.value}% &nbsp;·&nbsp; threshold ${inc.threshold}% &nbsp;·&nbsp; Telegram: ${inc.notified ? "✓ sent" : "✗ failed"}
+            ${inc.value}% &nbsp;&middot;&nbsp; threshold ${inc.threshold}% &nbsp;&middot;&nbsp; Telegram: ${inc.notified ? "sent" : "failed"}
           </div>
           <div class="incident-summary">${summaryHtml || '<span style="color:var(--muted);font-size:0.75rem">No summary available</span>'}</div>
         </div>
@@ -674,7 +674,7 @@ async function loadAll() {
     updatePagination(data.total, currentOffset, PAGE_SIZE);
   } catch (e) {
     document.getElementById("incident-list").innerHTML =
-      `<div class="empty"><div class="big">⚠</div>Could not reach API. Is the server running?</div>`;
+      `<div class="empty"><div class="big">!</div>Could not reach API. Is the server running?</div>`;
     console.error(e);
   }
 }
